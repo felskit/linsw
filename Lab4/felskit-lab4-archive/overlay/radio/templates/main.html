@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="description" content="">
+    <meta name="author" content="">
+    <link rel="icon" href="">
+    <title>{{ title }}</title>
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css" rel="stylesheet">
+  </head>
+
+  <body>
+    <nav class="navbar navbar-inverse navbar-fixed-top">
+      <div class="container">
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
+            <span class="sr-only">Toggle navigation</span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+          </button>
+          <a class="navbar-brand" href="">{{ title }}</a>
+        </div>
+        <div id="navbar" class="collapse navbar-collapse">
+          <ul class="nav navbar-nav">
+            <li class="active"><a href="">Home</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <div class="container-fluid">
+
+      <div class="jumbotron">
+        <h2>Currently playing: {{ current_name }}<br/>Volume: {{ current_volume }}%</h2>
+        <div class="btn-group btn-group-justified">
+          <a href="/{{ streams_count - 1 if current_id - 1 < 0 else current_id - 1 }}" class="btn btn-lg btn-success">Previous</a>
+          <a href="/{{ 0 if current_id + 1 > streams_count - 1 else current_id + 1 }}" class="btn btn-lg btn-success">Next</a>
+          <a href="/vol/down" class="btn btn-lg btn-warning">Volume -</a>
+          <a href="/vol/up" class="btn btn-lg btn-warning">Volume +</a>
+          <a href="/stop" class="btn btn-lg btn-danger">Stop</a>
+        </div>
+        <br/>
+        <form method="POST" action="/">
+          <div class="input-group">
+            <span class="input-group-addon">Stream name</span>
+            <input type="text" class="form-control" name="name" placeholder="Enter name"></input> 
+            <span class="input-group-addon">Stream url</span>
+            <input type="text" class="form-control" name="url" placeholder="Enter url"></input> 
+            <span class="input-group-btn">
+              <input type="submit" class="btn btn-primary"></input>
+            </span>
+          </div>
+        </form>
+      </div>
+
+      <div id="sl">
+        {% for stream in streams %}
+        <div class="well">
+          <div class="btn-toolbar pull-right">
+            <a style="margin-top: 20px" class="btn btn-info btn-large" href="/{{ stream.id }}">Play</a>
+          </div>
+          <h2>{{ stream.name }}</h2>
+        </div>
+        {% else %}
+            <li><em>No streams</em>
+        {% endfor %}
+      </div>
+
+    </div>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
+  </body>
+</html>

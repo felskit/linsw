@@ -1,0 +1,6 @@
+config BR2_PACKAGE_GPIO_COUNTER
+	bool "gpio-counter"
+	help
+	  Binary counter using GPIO.
+
+	  https://github.com/felskit

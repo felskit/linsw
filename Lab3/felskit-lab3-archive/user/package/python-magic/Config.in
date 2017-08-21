@@ -1,0 +1,9 @@
+config BR2_PACKAGE_PYTHON_MAGIC
+	bool "python-magic"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Python interface to the libmagic
+	  file type identification library
+
+comment "python-magic needs python3"
+	depends on !BR2_PACKAGE_PYTHON3

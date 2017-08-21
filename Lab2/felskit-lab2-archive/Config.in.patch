@@ -1,0 +1,10 @@
+--- package/Config.in	2017-01-25 09:27:44.000000000 +0100
++++ ../../felskit-lab2-archive/Config.in	2017-04-20 13:18:39.231633836 +0200
+@@ -80,6 +80,7 @@
+ 	source "package/fwts/Config.in"
+ 	source "package/gdb/Config.in"
+ 	source "package/google-breakpad/Config.in"
++	source "package/gpio-counter/Config.in"
+ 	source "package/iozone/Config.in"
+ 	source "package/kexec/Config.in"
+ 	source "package/kexec-lite/Config.in"

@@ -1,0 +1,10 @@
+--- package/Config.in	2017-01-25 09:27:44.000000000 +0100
++++ ../../tmp/Config.in	2017-03-30 13:21:36.357744880 +0200
+@@ -805,6 +805,7 @@
+ 	source "package/python-wcwidth/Config.in"
+ 	source "package/python-web2py/Config.in"
+ 	source "package/python-webpy/Config.in"
++	source "package/python-welcome/Config.in"
+ 	source "package/python-werkzeug/Config.in"
+ 	source "package/python-ws4py/Config.in"
+ 	source "package/python-wsaccel/Config.in"

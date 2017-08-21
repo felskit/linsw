@@ -1,0 +1,10 @@
+--- package/Config.in	2017-01-25 09:27:44.000000000 +0100
++++ ../Lab3/user-image/buildroot-2016.11.2/package/Config.in	2017-05-01 19:27:27.505757754 +0200
+@@ -705,6 +705,7 @@
+ 	source "package/python-lmdb/Config.in"
+ 	source "package/python-lxml/Config.in"
+ 	source "package/python-mad/Config.in"
++	source "package/python-magic/Config.in"
+ 	source "package/python-mako/Config.in"
+ 	source "package/python-markdown/Config.in"
+ 	source "package/python-markupsafe/Config.in"

@@ -1,0 +1,3 @@
+#!/bin/sh
+hello-world.py
+exit 0

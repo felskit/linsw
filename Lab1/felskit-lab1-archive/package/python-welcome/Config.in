@@ -1,0 +1,10 @@
+config BR2_PACKAGE_PYTHON_WELCOME
+	bool "python-welcome"
+	depends on BR2_PACKAGE_PYTHON
+	help
+	  Python welcome script.
+
+	  https://www.python.org/
+
+comment "python-welcome needs python"
+	depends on !BR2_PACKAGE_PYTHON

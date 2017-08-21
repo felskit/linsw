@@ -1,0 +1,3 @@
+#!/bin/sh
+ntpdate pl.pool.ntp.org
+exit 0
