@@ -1,0 +1,220 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{tabularx}
+\usepackage{helvet}
+\usepackage{hyperref}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage[polish]{babel}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{inconsolata}
+\lstdefinestyle{bash}{
+  basicstyle=\ttfamily\color{black},
+  captionpos=b,
+  commentstyle=\color{teal},
+  keywordstyle=\color{blue},
+  stringstyle=\color{olive},
+  language=bash,
+  moredelim=**[is][\color{blue}]{^}{^},
+  showstringspaces=false,
+  columns=fullflexible
+}
+
+\renewcommand\familydefault{\sfdefault}
+
+\title{Linux w systemach wbudowanych -- Laboratorium 3}
+\author{Tymon Felski}
+
+\begin{document}
+
+\makeatletter
+\begin{center}
+	\LARGE{\@title}\\
+	\vspace{.4cm}
+	\Large{\@author}\\
+	\vspace{.2cm}
+	\large{\today}
+\end{center}
+\makeatother
+
+\section{Treść zadania}
+Podczas trzeciego laboratorium należało wykonać następujące polecenia:
+\begin{enumerate}
+	\item Przygotować ``administracyjny'' system Linux:
+	\begin{itemize}
+		\item pracujący w initramfs,
+		\item zawierajacy narzędzia niezbędne do zarządzania kartą SD.
+	\end{itemize}
+	\item Przygotować ``użytkowy'' system Linux pracujący z systemem plików e2(3,4)fs na drugiej partycji, zawierający serwer WWW, sterowany przez interfejs WWW, który:
+	\begin{itemize}
+		\item będzie udostępniać pliki z partycji 3 na karcie SD,
+		\item będzie umożliwiać wgrywanie nowych plików na tę partycję po uwierzytelnieniu użytkownika.
+	\end{itemize}
+	\item Przygotować bootloader, umożliwiający określenie, który system (administracyjny czy użytkowy) ma zostać załadowany.
+\end{enumerate}
+
+\section{Odtwarzanie projektu z załączonego archiwum}
+Dostarczone archiwum należy umieścić w dowolnym miejscu na dysku i rozpakować. W środku znajdują się pliki niezbędne do odtworzenia konfiguracji obrazów systemów administracyjnego i użytkowego oraz nieskompilowany skrypt bootloadera. Uruchomienie skryptów \texttt{install.sh}, znajdujących się w środku katalogów \texttt{admin/} i \texttt{user/} w archiwum, spowoduje odtworzenie konfiguracji odpowiednich środowisk z laboratorium. Jako parametr w kazdym z nich należy podać ścieżkę do katalogu z rozpakowanymi plikami Buildroota.\\[\baselineskip]
+Skrypty utworzą katalogi \texttt{felskit-lab3-admin/} oraz \texttt{felskit-lab3-user/} równoległe do katalogów przekazanych jako argumenty. Następnie zostaną przekopiowane odpowiednie pliki i katalogi. Ponadto, oba skrypty zastosują domyślną konfigurację dla płytki Raspberry Pi i właściwie spatchują pliki konfiguracyjne Buildroota. Na koniec każdy ze skryptów zapyta czy rozpocząć kompilację jądra systemu.
+
+\section{Opis rozwiązania}
+\subsection{Przygotowanie}
+W celu przygotowania obu środowisk Buildroot, ustawiono następujące opcje:
+\begin{enumerate}
+	\item \textit{System configuration} $\rightarrow$ \textit{Port to run a getty (login prompt) on} na \textit{ttyAMA0}
+	\item \textit{Build options} $\rightarrow$ \textit{Mirrors and Download locations} $\rightarrow$ \textit{Primary download site}\\
+	na \textit{http://192.168.137.24/dl}
+	\item \textit{Target options} $\rightarrow$ \textit{Target ABI} na \textit{EABI}
+	\item \textit{Toolchain} $\rightarrow$ \textit{Toolchain type} na \textit{External toolchain}
+	\item \textit{Toolchain} $\rightarrow$ \textit{Toolchain} na \textit{Sourcery CodeBench ARM 2014.05}
+\end{enumerate}
+Dla obu obrazów włączono ich kompresję ustawiając opcję
+\begin{quote}
+	\textit{Filesystem images} $\rightarrow$ \textit{tar the root filesystem, Compression method (gzip)}
+\end{quote}
+a systemowi administracyjnemu dodatkowo zaznaczono opcję
+\begin{quote}
+	\textit{Filesystem images} $\rightarrow$ \textit{initial RAM filesystem linked into linux kernel}
+\end{quote}
+
+\subsection{Zadania}
+\subsubsection{Skrypt bootloadera}
+Jednym z celów ćwiczenia było przygotowanie skryptu bootloadera \texttt{U-Boot}, który umożliwiałby wybór obrazu systemu do załadowania. System ratunkowy jest dalej dostępny poprzez przerwanie procedury bootwania i wpisanie polecenia \texttt{run rescue}. Jeżeli natomiast nie zostanie wciśnięty żaden klawisz, nastąpi wykonanie poniższego skryptu.
+\begin{lstlisting}[style=bash, caption={Zawartość pliku boot.script}]
+gpio set 18
+sleep 1
+gpio clear 18
+
+fatload mmc 0:1 ${fdt_addr_r} bcm2708-rpi-b.dtb
+if gpio input 10 || gpio input 22 || gpio input 27; then
+	gpio set 24
+	fatload mmc 0:1 ${kernel_addr_r} zImage-admin
+	setenv bootargs "${bootargs_orig} console=ttyAMA0"
+else
+	gpio set 23
+	fatload mmc 0:1 ${kernel_addr_r} zImage-user
+	setenv bootargs "${bootargs_orig} console=ttyAMA0 root=/dev/mmcblk0p2 rootwait"
+fi
+bootz ${kernel_addr_r} - ${fdt_addr_r}
+\end{lstlisting}
+Skrypt zapala białą diodę na płytce, korzystając z interfejsu \texttt{GPIO}. Po upływie jednej sekundy jest ona gaszona i następuje sczytanie stanów przycisków. Jeżeli przynajmniej jeden z nich był w tym momencie wciśnięty, uruchomi się system administracyjny. W przeciwnym przypadku zostanie uruchomiony system użytkowy. Po wybraniu systemu zostanie zapalona odpowiednia dioda, czerwona lub zielona, sygnalizująca, który obraz został uruchomiony. Użycie \texttt{rootwait} pozwala uniknąć tzw. \texttt{kernel panic} przed wczytaniem systemu plików z innej partycji. 
+
+\subsubsection{System administracyjny}
+System administracyjny ma pełnić rolę podobną do systemu ratunkowego, który poznaliśmy wcześniej. Został on wyposażony w narzędzia pozwalające na partycjonowanie dysku i zarządzanie nim, takie jak \texttt{parted}, \texttt{dosfstools} oraz \texttt{e2fsprogs}. Dodanie programu \texttt{parted} wymaga zaznaczenia opcji
+\begin{quote}
+	\textit{Target packages} $\rightarrow$ \textit{Hardware handling} $\rightarrow$ \textit{parted}
+\end{quote}
+Aby wybrać zestaw narzędzi \texttt{dosfstools} zaznaczono opcję
+\begin{quote}
+	\textit{Target packages} $\rightarrow$ \textit{Filesystem and flash utilities} $\rightarrow$ \textit{dosfstools}
+\end{quote}
+a także wszystkie trzy zawarte pod nią, czyli \textit{fatlabel}, \textit{fsck.fat} oraz \textit{mkfs.fat}. Dodanie \texttt{e2fsprogs} ogranicza się do wybrania opcji
+\begin{quote}
+	\textit{Target packages} $\rightarrow$ \textit{Filesystem and flash utilities} $\rightarrow$ \textit{e2fsprogs}
+\end{quote}
+Poza wybranymi domyślnie opcjami potomnymi została dodana jedynie \textit{resize2fs}. Ponadto, system musi mieć możliwość transferu danych przy pomocy SSH. W tym celu potrzebny jest \texttt{dropbear}, który można znaleźć pod opcją
+\begin{quote}
+	\textit{Target packages} $\rightarrow$ \textit{Networking applications} $\rightarrow$ \textit{dropbear}
+\end{quote}
+W celu ułatwienia korzystania z powyższego mechanizmu, ustawiono hasło do konta \texttt{root} wpisując ciąg znaków \texttt{Lab3} w pole
+\begin{quote}
+\textit{System configuration} $\rightarrow$ \textit{Root password}
+\end{quote}
+Obraz tego systemu został umieszczony na pierwszej partycji karty pamięci, obok obrazu systemu ratunkowego, pod nazwą \texttt{zImage-admin}.
+
+\subsubsection{System użytkowy}
+System użytkowy, którego obraz jądra na pierwszej partycji karty pamięci nazywał się \texttt{zImage-user}, jest domyślnie wybierany przez skrypt bootloadera. W przeciwieństwie do systemu administracyjnego, system plików nie jest tutaj ładowany w całości do pamięci RAM (nie pracuje w \texttt{initramfs}). Znajduje się on na drugiej partycji, z której zostaje załadowany przez wcześniej opisywany skrypt.\\[\baselineskip]
+Na potrzeby zadania do obrazu zostały dodane niezbędne paczki. Interpreter języka Python w wersji 3 można znaleźć pod opcją
+\begin{quote}
+	\textit{Target packages} $\rightarrow$ \textit{Interpreter languages and scripting} $\rightarrow$ \textit{python3}
+\end{quote}
+Ponadto obraz został wyposażony w środowisko Tornado poprzez zaznaczenie opcji
+\begin{quote}
+	\textit{Target packages} $\rightarrow$ \textit{Interpreter languages and scripting} $\rightarrow$ \textit{External python modules} $\rightarrow$ \textit{python-tornado}
+\end{quote}
+Do poprawnego działania wykorzystywanego filemanagera wymagana była między innymi paczka \texttt{file}, którą można dodać wybierając opcję
+\begin{quote}
+	\textit{Target packages} $\rightarrow$ \textit{Shell and utilities} $\rightarrow$ \textit{Utilities} $\rightarrow$ \textit{file}
+\end{quote}
+oraz samodzelnie dodany pakiet \texttt{python-magic}. Do katalogu \texttt{package/} dodano \texttt{python-magic/}, w którym utworzono dwa pliki: \texttt{Config.in} oraz \texttt{python-magic.mk}.\\[\baselineskip]
+Pierwszy z nich ma za zadanie zdefiniowanie pakietu.
+\begin{lstlisting}[style=bash, caption={Zawartość pliku Config.in}, keywordstyle=\color{black}]
+^config^ BR2_PACKAGE_PYTHON_MAGIC
+	^bool^ "python-magic"
+	^depends on^ BR2_PACKAGE_PYTHON3
+	^help^
+	  Python interface to the libmagic
+	  file type identification library
+
+^comment^ "python-magic needs python3"
+	^depends on^ !BR2_PACKAGE_PYTHON3
+\end{lstlisting}
+Drugi plik odpowiada za definicję metody instalacji źródeł.
+\begin{lstlisting}[style=bash, caption={Zawartość pliku python-magic.mk}, keywordstyle=\color{black}]
+################################################################################
+#
+# python-magic
+#
+################################################################################
+
+PYTHON_MAGIC_VERSION = 0.4.13
+PYTHON_MAGIC_SITE = https://github.com/ahupp/python-magic.git
+PYTHON_MAGIC_SITE_METHOD = git
+PYTHON_MAGIC_LICENSE = MIT
+PYTHON_MAGIC_SETUP_TYPE = setuptools
+
+$(eval $(python-package))
+\end{lstlisting}
+Pliki źródłowe paczki pobierane są z repozytorium udostępnionego na GitHubie, do którego adres został podany w \texttt{PYTHON\_MAGIC\_SITE}. W pliku \texttt{package/Config.in} w sekcji \textit{External python modules} należy dodać linię
+\begin{lstlisting}[style=bash]
+source "package/python-magic/Config.in"
+\end{lstlisting}
+Wówczas możliwe będzie dodanie naszej paczki poprzez zaznaczenie opcji
+\begin{quote}
+	\textit{Target packages} $\rightarrow$ \textit{Interpreter languages and scripting} $\rightarrow$ \textit{External python modules} $\rightarrow$ \textit{python-magic}
+\end{quote}
+Powyższe paczki są niezbędne do poprawnego działania opisanego niżej filemanagera.
+
+\subsubsection{Filemanager}
+Użyty filemanager jest modyfikacją filemanagera z \href{https://github.com/CyRaXMAN/filemanager}{repozytorium} udostępnionego na GitHubie. Jest napisany w języku Python, wykorzystuje środowisko Tornado oraz Java Script i jQuery do obsługi interfejsu webowego.\\[\baselineskip]
+Został on umieszczony w systemie użytkowym poprzez wykorzystanie mechanizmu Overlay. W opcji
+\begin{quote}
+\textit{System configuration} $\rightarrow$ \textit{Root filesystem overlay directories}
+\end{quote}
+podano ścieżkę do katalogu \texttt{overlay/}, do którego zostały skopiowane wszystkie pliki źródłowe.\\[\baselineskip]
+Filemanager udostępnia jedynie pliki znajdujące się na trzeciej partycji karty pamięci. Jest ona montowana w punkcie \texttt{/files} podczas startu systemu. Takie zachowanie zostało osiągnięte poprzez dodanie pliku \texttt{overlay/etc/fstab} rozszerzonego o linię
+\begin{lstlisting}[style=bash]
+\dev\mmcblk0p3    \files    ext4    defaults    0    2
+\end{lstlisting}
+Został on utworzony na podstawie domyślnego pliku \texttt{fstab} wygenerowanego podczas kompilacji obrazu systemu. Przed końcem kompilacji domyślna wersja tego pliku zostanie nadpisana tą z katalogu \texttt{overlay/}.\\[\baselineskip]
+Aby serwer Tornado startował razem z systemem, co było przedmiotem dodatkowej części zadania, dodano plik \texttt{overlay/etc/init.d/S50filemanager}. Odpowiada on za uruchomienie serwera poprzez wykonanie skryptu \texttt{run.sh} przy starcie systemu.
+\begin{lstlisting}[style=bash, caption={Zawartość pliku S50filemanager}]
+#!/bin/sh
+cd /filemanager
+case $1 in
+    start) ./run.sh > /var/log/filemanager.log 2>&1 & ;;
+    stop) killall python3 ;;
+esac
+\end{lstlisting}
+Przeglądać katalogi może każda osoba, natomiast upload plików jest zabiezpieczony przez dekorator \texttt{@tornado.web.authenticated} i wymaga autoryzacji. Uwierzytelnianie jest zrealizowane przy pomocy mechanizmu \texttt{secure cookies}. Po kliknięciu przycisku \texttt{Login} na górnym pasku należy wpisać nazwę użytkownika \texttt{admin} oraz hasło \texttt{admin}.
+
+\subsubsection{Partycjonowanie i konfiguracja}
+Skrypt bootloadera \texttt{boot.script} został umieszczony na głównej partycji karty pamięci płytki, obok wszystkich obrazów systemów. Jego skompilowana wersja \texttt{boot.scr}, rozszerzona o sumę kontrolną, została wygenerowana przy pomocy polecenia
+\begin{lstlisting}[style=bash, commentstyle=\color{black}]
+# mkimage -T script -C none -n "boot.script" -d boot.script boot.scr
+\end{lstlisting}
+Jako pierwszy uruchomiono system administracyjny, po czym skonfigurowano dodatkowe partycje karty pamięci oraz system użytkowy. Pierwszym krokiem było utworzenie dwóch partycji poleceniami
+\begin{lstlisting}[style=bash, commentstyle=\color{black}]
+# mkfs.ext4 /dev/mmcblk0p2
+# mkfs.ext4 /dev/mmcblk0p3
+\end{lstlisting}
+Dzięki programowi \texttt{dropbear} możliwe było skopiowanie przy pomocy SSH pliku \texttt{rootfs.tar.gz}, zawierającego skompresowany system plików systemu użytkowego. Po przesłaniu pliku można było przystąpić do instalacji systemu plików na drugiej partycji. Wypakowanie wymagało wykonania następującego polecenia
+\begin{lstlisting}[style=bash, commentstyle=\color{black}]
+# gunzip -c rootfs.tar.gz | tar -xf -
+\end{lstlisting}
+Ostatnim krokiem konfiguracji było utworzenie katalogu \texttt{/files}, aby podczas uruchamiania systemu użytkowego mogła tam zostać podmontowana trzecia, wykorzystywana przez filemanagera, partycja karty pamięci.
+
+\end{document}

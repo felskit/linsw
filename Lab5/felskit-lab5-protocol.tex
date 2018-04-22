@@ -1,0 +1,125 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{tabularx}
+\usepackage{helvet}
+\usepackage{hyperref}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage[polish]{babel}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{inconsolata}
+\lstdefinestyle{bash}{
+  basicstyle=\ttfamily\color{black},
+  captionpos=b,
+  commentstyle=\color{teal},
+  keywordstyle=\color{blue},
+  stringstyle=\color{olive},
+  language=bash,
+  moredelim=**[is][\color{blue}]{^}{^},
+  showstringspaces=false,
+  columns=fullflexible
+}
+
+\renewcommand\familydefault{\sfdefault}
+
+\title{Linux w systemach wbudowanych -- Laboratorium 5}
+\author{Tymon Felski}
+
+\begin{document}
+
+\makeatletter
+\begin{center}
+	\LARGE{\@title}\\
+	\vspace{.4cm}
+	\Large{\@author}\\
+	\vspace{.2cm}
+	\large{\today}
+\end{center}
+\makeatother
+
+\section{Treść zadania}
+Podczas piątego laboratorium należało przenieść projekt stworzony w ramach czwartego laboratorium do środowiska innego niż Buildroot. Cel laboratorium był taki sam jak poprzednio, czyli przygotowanie przy pomocy płytki Raspberry Pi urządzenia wyposażonego w złożony interfejs użytkownika, w którym:
+\begin{itemize}
+	\item przyciski i diody LED powinny być użyte do podstawowej obsługi urządzenia,
+	\item interfejs WWW lub inny interfejs sieciowy powinien być użyty do bardziej zaawansowanych funkcji,
+	\item przetwarzany powinien być dźwięk lub obraz.
+\end{itemize}
+
+\section{Odtwarzanie projektu z załączonego archiwum}
+Należy wykonać kroki opisane poniżej.
+
+\section{Opis rozwiązania}
+\subsection{Przygotowanie}
+Wybór środowiska padł na \texttt{LEDE Project}. Pobrano obraz systemu w wersji \texttt{17.01}. Znajduje się on w dołączonym archiwum pod nazwą \texttt{lede.img.gz}.\\[\baselineskip]
+Pierwszym krokiem było wgranie systemu na kartę pamięci płytki. W tym celu uruchomiono płytkę w trybie ratunkowym (przerywając bootowanie i wpisując \texttt{run rescue}), a następnie wykonano polecenie
+\begin{lstlisting}[style=bash, commentstyle=\color{black}]
+# ssh felskit@192.148.143.XXX "cat /malina/felskit/lede.img.gz" \
+> | gunzip -c | dd of=/dev/mmcblk0 bs=4M
+\end{lstlisting}
+Po rozpakowaniu i wgraniu obrazu oraz ponownym uruchomieniu płytki można było przystąpić do konfiguracji systemu. Niezbędne było skonfigurowanie połączenia sieciowego.
+\begin{lstlisting}[style=bash, commentstyle=\color{black}]
+# udhcpc -i br-lan
+# uci set network.lan.proto=dhcp
+# uci commit
+# /etc/init.d/network restart
+\end{lstlisting}
+To zapewniło działające połączenie z siecią. Kolejnym krokiem była aktualizacja listy paczek dostępnych przez \texttt{opkg}.
+\begin{lstlisting}[style=bash, commentstyle=\color{black}]
+# opkg update
+\end{lstlisting}
+Aplikacja przygotowana na poprzednim laboratorium korzysta z \texttt{mpd} oraz \texttt{mpc} przy odtwarzaniu muzyki, więc należało je zainstalować poleceniami
+\begin{lstlisting}[style=bash, commentstyle=\color{black}]
+# opkg install mpd
+# opkg install mpc
+\end{lstlisting}
+Domyślnie instalującym się \texttt{mpd} jest \texttt{mpd-mini}, jednak w zupełności wystarczy do zaspokojenia potrzeb aplikacji. Niezbędny był też \texttt{Python} w wersji 3 i odpowiadający mu package manager.
+\begin{lstlisting}[style=bash, commentstyle=\color{black}]
+# opkg install python3
+# opkg install python3-pip
+\end{lstlisting}
+\newpage\noindent
+Aby uniknąć komplikacji przy instalacji pozostałych pakietów, zaktualizowano \texttt{setuptools}.
+\begin{lstlisting}[style=bash, commentstyle=\color{black}]
+# pip3 install --upgrade setuptools
+\end{lstlisting}
+Do działania przygotowanej aplikacji niezbędy jest moduł \texttt{flask}, jednak jeden z pakietów, od których on zależy, wymaga modułu \texttt{six}. Wobec tego wykonano polecenia
+\begin{lstlisting}[style=bash, commentstyle=\color{black}]
+# pip3 install six
+# pip3 install flask
+\end{lstlisting}
+Aplikacja korzysta także z interfejsu \texttt{GPIO} do zarządzania diodami i przyciskami na płytce Raspberry Pi, więc wymagany jest moduł, który spełni to wymaganie. Niestety instalacja wykorzystywanego podczas poprzedniego laboratorium modułu \texttt{RPi.GPIO} nie jest możliwa pod używanym obrazem \texttt{LEDE}, chociażby ze względu na brak \texttt{ccache}. Wybrano jego uproszczoną alternatywę - \texttt{gpio}.
+\begin{lstlisting}[style=bash, commentstyle=\color{black}]
+# pip3 install gpio
+\end{lstlisting}
+Tak przygotowany system był w stanie uruchomić aplikację, jednak należało w niej najpierw wprowadzić kilka modyfikacji, które opisane są w następnym punkcie.
+
+\subsection{Aplikacja}
+Stworzona w ramach laboratorium aplikacja to internetowe radio napisane w Pythonie, którym można sterować przy pomocy interfejsu \texttt{GPIO} oraz interfejsu webowego. Ze względu na zmianę modułu obsługującego interfejs \texttt{GPIO}, aplikacja musiała zostać nieznacznie zmodyfikowana.\\[\baselineskip]
+Pierwszym krokiem była zmiana importowanego modułu.
+\begin{lstlisting}[style=bash, language=python]
+- import RPi.GPIO as GPIO
++ import gpio as GPIO
+\end{lstlisting}
+Ponadto, należało usunąć linijkę konfigurującą tryb działania interfejsu.
+\begin{lstlisting}[style=bash, language=python]
+- GPIO.setmode(GPIO.BCM)
+\end{lstlisting}
+Konieczna była zmiana sposobu inicjacji przycisków.
+\begin{lstlisting}[style=bash, language=python]
+- GPIO.setup(button, GPIO.IN, pull_up_down = GPIO.PUD_UP)
++ GPIO.setup(button, GPIO.IN, initial=True)
+\end{lstlisting}
+Niezbędna okazała się także zmiana odniesień do stanu przysków i diód poprzez \texttt{GPIO.HIGH} oraz \texttt{GPIO.LOW} na odpowiednio \texttt{1} oraz \texttt{0}. Ostatnim krokiem było odpowiednie wywołanie czyszczenia stanu diód, które polega już na jednorazowym wywołaniu \texttt{GPIO.cleanup()}.
+\begin{lstlisting}[style=bash, language=python]
+for led in [17, 18, 23, 24]:
+    GPIO.cleanup(led)
+\end{lstlisting}
+Tak zmodyfikowana aplikacja mogła zostać bez problemu uruchomiona na wcześniej skonfigurowanym obrazie systemu dostarczonym przez \texttt{LEDE Project}. Przy pomocy \texttt{ssh} folder z radiem znajdujący się w dostarczonym archiwum został skopiowany z komputera laboratoryjnego na kartę pamięci płytki.
+\begin{lstlisting}[style=bash]
+$ scp -r radio/ root@192.168.143.XXX:/radio
+\end{lstlisting}
+
+\end{document}

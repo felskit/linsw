@@ -1,0 +1,223 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{tabularx}
+\usepackage{helvet}
+\usepackage{hyperref}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage[polish]{babel}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{inconsolata}
+\lstdefinestyle{bash}{
+  basicstyle=\ttfamily\color{black},
+  captionpos=b,
+  commentstyle=\color{teal},
+  keywordstyle=\color{blue},
+  stringstyle=\color{olive},
+  language=bash,
+  moredelim=**[is][\color{blue}]{^}{^},
+  showstringspaces=false,
+  columns=fullflexible
+}
+
+\renewcommand\familydefault{\sfdefault}
+
+\title{Linux w systemach wbudowanych -- Laboratorium 1}
+\author{Tymon Felski}
+
+\begin{document}
+
+\makeatletter
+\begin{center}
+	\LARGE{\@title}\\
+	\vspace{.4cm}
+	\Large{\@author}\\
+	\vspace{.2cm}
+	\large{\today}
+\end{center}
+\makeatother
+
+\section{Treść zadania}
+Podczas pierwszego laboratorium należało wykonać następujące czynności:
+\begin{enumerate}
+	\item Uruchomić Raspberry Pi w trybie ratunkowym i zapoznać się z możliwościami tego trybu.
+	\item Przygotować obrazu systemu Linux, używającego \texttt{initramfs} jako głównego systemu plików:
+	\begin{enumerate}
+		\item Raspberry Pi powinno automatycznie podłączyć się do sieci, używając DHCP do otrzymania parametrów sieci. Jeśli kabel sieciowy nie jest podłączony, połączenie powinno zostać zestawione automatycznie po podłączeniu kabla. Odłączenie kabla powinno powodować wyłączenie połączenia sieciowego, a jego ponowne podłączenie – ponowne zestawienie.
+		\item System powinien mieć ustaloną nazwę jako \texttt{imie\_nazwisko} autora.
+		\item Przy starcie systemu lub po podłączeniu kabla sieciowego, jeśli nie był on podłączony podczas startu, zegar systemowy powinien być automatycznie synchronizowany z jednym z serwerów NTP.
+		\item Obraz systemu powinien zawierać interpreter Pythona z prostym skryptem pokazującym jego działanie.
+		\item Oprócz użytkownika \texttt{root} w systemie powinno zostać stworzone konto użytkownika domyślnego (o dowolnie wybranej nazwie). Hasła obu użytkowników powinny być ustalone.
+	\end{enumerate}
+	\item Skrypt z podpunktu (d) powinien dodatkowo wysyłać do komputera laboratoryjnego informację o godzinie startu systemu wykorzystując protokół UDP.
+\end{enumerate}
+
+\section{Odtwarzanie projektu z załączonego archiwum}
+Dostarczone archiwum należy umieścić w dowolnym miejscu na dysku i rozpakować. Uruchomienie skryptu \texttt{install.sh}, znajdującego się w środku archiwum, spowoduje odtworzenie konfiguracji środowiska z laboratorium. Jako parametr należy podać ścieżkę do katalogu z rozpakowanymi plikami Buildroota.\\[\baselineskip]
+Skrypt utworzy katalog \texttt{felskit-lab1/} równoległy do katalogu przekazanego jako argument. Następnie do obu z nich zostaną przekopiowane odpowiednie pliki i katalogi. Ponadto, skrypt zastosuje domyślną konfigurację dla płytki Raspberry Pi i właściwie spatchuje pliki konfiguracyjne Buildroota. Na koniec skrypt zapyta czy rozpocząć kompilację jądra systemu.
+
+\section{Opis rozwiązania}
+\subsection{Przygotowanie}
+Na początku ćwiczenia płytka została uruchomiona w trybie ratunkowym poleceniem
+\begin{lstlisting}[style=bash]
+$ run rescue
+\end{lstlisting}
+po wcześniejszym wciśnięciu klawisza w czasie oczekiwania przez bootloader U-boot. Po zapoznaniu się z możliwościami tego trybu takimi jak łączenie się przez SSH z komputerami laboratoryjnymi i wgrywania własnego obrazu systemu, przystąpiono do głównej części zadania.
+
+\newpage\noindent
+Po pobraniu Buildroota w wersji 2016.11.2, zastosowano konfigurację domyślną dla płytki Raspberry Pi przy pomocy polecenia
+\begin{lstlisting}[style=bash]
+$ make raspberrypi_defconfig
+\end{lstlisting}
+Następnie, w celu przygotowania środowiska Buildroot, ustawiono następujące opcje:
+\begin{enumerate}
+	\item \textit{System configuration} $\rightarrow$ \textit{Port to run a getty (login prompt) on} na \textit{ttyAMA0}
+	\item \textit{Build options} $\rightarrow$ \textit{Mirrors and Download locations} $\rightarrow$ \textit{Primary download site}\\
+	na \textit{http://192.168.137.24/dl}
+	\item \textit{Target options} $\rightarrow$ \textit{Target ABI} na \textit{EABI}
+	\item \textit{Toolchain} $\rightarrow$ \textit{Toolchain type} na \textit{External toolchain}
+	\item \textit{Toolchain} $\rightarrow$ \textit{Toolchain} na \textit{Sourcery CodeBench ARM 2014.05}
+\end{enumerate}
+Ponadto, zaznaczono opcję
+\begin{quote}
+	\textit{Filesystem images} $\rightarrow$ \textit{initial RAM filesystem linked into linux kernel}
+\end{quote}
+oraz włączono kompresję obrazu ustawiając opcję
+\begin{quote}
+	\textit{Filesystem images} $\rightarrow$ \textit{tar the root filesystem, Compression method (gzip)}
+\end{quote}
+
+\subsection{Zadania}
+\subsubsection{Automatyczne konfigurowanie sieci}
+Pozyskiwanie parametrów sieci jest możliwe dzięki domyślnie wkompilowanemu programowi \texttt{udhcp}. Aby system automatycznie konfigurował interfejsy sieciowe przy jego pomocy, należy dołączyć paczkę zawierającą daemon \texttt{ifplugd}. Jest ona zależna od \texttt{BR2\_PACKAGE\_BUSYBOX\_SHOW\_OTHERS}, więc konieczne jest zaznaczenie opcji
+\begin{quote}
+\textit{Target packages} $\rightarrow$ \textit{BusyBox} $\rightarrow$ \textit{Show packages that are also provided by busybox}
+\end{quote}
+która spowoduje wyświetlenie dodatkowych paczek dostarczanych przez busybox. Wówczas możliwe jest zaznaczenie pakietu zawierającego interesujący nas daemon \texttt{ifplugd}
+\begin{quote}
+\textit{Target packages} $\rightarrow$ \textit{Networking applications} $\rightarrow$ \textit{ifplugd}
+\end{quote}
+Wraz z pakietem, do obrazu systemu dodawany jest skrypt, którego zadaniem jest uruchomienie daemona przy starcie systemu. Co więcej, \texttt{ifplugd} śledzi zmiany stanu połączenia sieciowego i odpowiednio konfiguruje interfejs sieciowy w przypadku odłączenia/podłączenia kabla.
+
+\subsubsection{Nazwa systemu}
+Zmiana nazwy hosta na \texttt{tymon\_felski} polega na wpisaniu tego ciągu znaków w polu
+\begin{quote}
+\textit{System configuration}  $\rightarrow$ \textit{System hostname}
+\end{quote}
+\subsubsection{Synchronizacja zegara}
+W celu umożliwienia automatycznej sychronizacji zegara systemowego przy pomocy protokołu NTP podczas startu systemu i odłączania/podłączania kabla sieciowego wykorzystano dołączony wcześniej do obrazu daemon \texttt{ifplugd} oraz program \texttt{ntpdate}, który można dodać zaznaczając opcję
+\begin{quote}
+\textit{Target packages} $\rightarrow$ \textit{Networking applications} $\rightarrow$ \textit{ntp} $\rightarrow$ \textit{ntpdate}
+\end{quote}
+Do tego rozwiązania niezbędne jest także dodanie paczki \texttt{ifupdown}, co można zrobić ustawiając opcję
+\begin{quote}
+\textit{Target packages} $\rightarrow$ \textit{Networking applications} $\rightarrow$ \textit{ifupdown}
+\end{quote}
+
+\newpage\noindent
+Ponieważ daemon \texttt{ifplugd} śledzi zmiany stanu połączenia sieciowego, można go wykorzystać do wywołania polecenia
+\begin{lstlisting}[style=bash]
+$ ntpdate pl.pool.ntp.org
+\end{lstlisting}
+zaraz po podłączeniu kabla, które zsynchronizuje zegar przy użyciu jednego z serwerów NTP z polskiej puli. Można także skonfigurować wywoływanie tego polecenia przy starcie systemu. Aby to osiągnąć, należy wykorzystać mechanizm Overlay. W opcji
+\begin{quote}
+\textit{System configuration} $\rightarrow$ \textit{Root filesystem overlay directories}
+\end{quote}
+podano ścieżkę do katalogu \texttt{overlay/} z plikami, które zostaną dodane do obrazu pod koniec kompilacji i, jeżeli będzie taka konieczność, nadpiszą poprzednie. Wewnątrz utworzono katalog \texttt{etc/init.d/}, do którego dodano plik \texttt{S51ntpdate}, który spowoduje ustawienie odpowiedniego czasu przy starcie systemu.
+\begin{lstlisting}[style=bash, caption={Zawartość pliku S51ntpdate}]
+#!/bin/sh
+ntpdate pl.pool.ntp.org
+exit 0
+\end{lstlisting}
+Plik o takiej samej zawartości został również dodany do \texttt{overlay/etc/network/if-up.d/}, co będzie skutkować wykonaniem go zaraz po podłączeniu kabla sieciowego.
+
+\subsubsection{Interpreter Pythona i prosty skrypt}
+Dodanie interpretera języka skryptowego Python do obrazu systemu polega na zaznaczeniu opcji
+\begin{quote}
+\textit{Target packages} $\rightarrow$ \textit{Interpreter languages and scripting} $\rightarrow$ \textit{python}
+\end{quote}
+Następnym krokiem jest przygotowanie paczki Buildroota, która wkompiluje do obrazu systemu nasz skrypt. Do katalogu \texttt{package/} dodano \texttt{python-script/}, w którym utworzono dwa pliki: \texttt{Config.in} oraz \texttt{python-script.mk}.\\[\baselineskip]
+Pierwszy z nich ma za zadanie zdefiniowanie pakietu i jego zależności od innych (w tym wypadku od \texttt{BR2\_PACKAGE\_PYTHON}).
+\begin{lstlisting}[style=bash, caption={Zawartość pliku Config.in}]
+^config^ BR2_PACKAGE_PYTHON_WELCOME
+    ^bool^ "python-welcome"
+    ^depends on^ BR2_PACKAGE_PYTHON
+    help
+      Python welcome script.
+
+      https://www.python.org/
+
+^comment^ "python-welcome needs python"
+    ^depends on^ !BR2_PACKAGE_PYTHON
+\end{lstlisting}
+Drugi plik odpowiada za definicję metody instalacji źródeł, do których podano w nim ścieżkę.
+\begin{lstlisting}[style=bash, caption={Zawartość pliku python-welcome.mk}, keywordstyle=\color{black}]
+################################################################################
+#
+# python-welcome
+#
+################################################################################
+
+PYTHON_WELCOME_VERSION = 1.0
+PYTHON_WELCOME_SITE = ^$(TOPDIR)^/../felskit-lab1/python-welcome
+PYTHON_WELCOME_SITE_METHOD = local
+PYTHON_WELCOME_DEPENDENCIES = python
+PYTHON_WELCOME_LICENSE = MIT
+
+^define^ PYTHON_WELCOME_INSTALL_TARGET_CMDS
+    ^$(INSTALL)^ -D -m 0755 ^$(@D)^/hello-world.py ^$(TARGET_DIR)^/usr/bin
+^endef^
+
+$(eval $(generic-package))
+\end{lstlisting}
+Tutaj plikiem źródłowym jest \texttt{hello-world.py}, będący pythonową wersją programu "Hello world!". Dodatkowa część zadania polegała na takim zmodyfikowaniu skryptu, aby wysyłał do komputera laboratoryjnego pakiet UDP z datą startu systemu. Wykorzystano tutaj moduł \texttt{socket} oraz możliwość pobierania aktualnej daty i godziny za pomocą modułu \texttt{datetime}.
+\begin{lstlisting}[style=bash, caption={Zawartość pliku hello-world.py}, language=python]
+#!/usr/bin/python
+import socket
+import datetime
+
+print "Hello world!"
+
+UDP_IP = "192.168.143.171"
+UDP_PORT = 56000
+MESSAGE = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+print "UDP target IP:", UDP_IP
+print "UDP target port:", UDP_PORT
+print "message:", MESSAGE
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.sendto(MESSAGE, (UDP_IP, UDP_PORT))
+\end{lstlisting}
+W pliku \texttt{package/Config.in} w sekcji \textit{External python modules} należy dodać linię
+\begin{lstlisting}[style=bash]
+source "package/python-welcome/Config.in"
+\end{lstlisting}
+Wówczas możliwe będzie dodanie naszej paczki poprzez zaznaczenie opcji
+\begin{quote}
+\textit{Target packages} $\rightarrow$ \textit{Interpreter languages and scripting} $\rightarrow$ \textit{External python modules} $\rightarrow$ \textit{python-welcome}
+\end{quote}
+Skrypt jest uruchamiany podczas startu systemu, ponieważ do wcześniej utworzonego katalogu\\
+\texttt{overlay/etc/init.d/} dodano plik \texttt{S50python-welcome}, który uruchamia nasz skrypt.
+\begin{lstlisting}[style=bash, caption={Zawartość pliku S50python-welcome}]
+#!/bin/sh
+hello-world.py
+exit 0
+\end{lstlisting}
+\subsubsection{Domyślny użytkownik i hasła}
+Hasło do konta \texttt{root} można ustawić przy pomocy opcji
+\begin{quote}
+\textit{System configuration} $\rightarrow$ \textit{Root password}
+\end{quote}
+Dodanie dodatkowego użytkownika jest zrealizowane za pośrednictwem tablicy użytkowników, do której ścieżkę należy podać w opcji
+\begin{quote}
+\textit{System configuration} $\rightarrow$ \textit{Path to the users tables}
+\end{quote}
+Poniższy wpis w tablicy użytkowników skutkuje dodaniem użytkownika o nazwie \texttt{felskit} i haśle \texttt{password}.
+\begin{lstlisting}[style=bash, caption={Zawartość pliku users}]
+felskit -1 users -1 =password /home/felskit /bin/sh - Tymon Felski
+\end{lstlisting}
+\end{document}

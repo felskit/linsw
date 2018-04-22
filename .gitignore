@@ -1,2 +1,5 @@
 *.tar.gz
-protocol.*
+*.aux
+*.log
+*.out
+*.synctex.gz

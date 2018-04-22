@@ -1,0 +1,202 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{tabularx}
+\usepackage{helvet}
+\usepackage{hyperref}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage[polish]{babel}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{inconsolata}
+\lstdefinestyle{bash}{
+  basicstyle=\ttfamily\color{black},
+  captionpos=b,
+  commentstyle=\color{teal},
+  keywordstyle=\color{blue},
+  stringstyle=\color{olive},
+  language=bash,
+  moredelim=**[is][\color{blue}]{^}{^},
+  showstringspaces=false,
+  columns=fullflexible
+}
+
+\renewcommand\familydefault{\sfdefault}
+
+\title{Linux w systemach wbudowanych -- Laboratorium 2}
+\author{Tymon Felski}
+
+\begin{document}
+
+\makeatletter
+\begin{center}
+	\LARGE{\@title}\\
+	\vspace{.4cm}
+	\Large{\@author}\\
+	\vspace{.2cm}
+	\large{\today}
+\end{center}
+\makeatother
+
+\section{Treść zadania}
+Podczas drugiego laboratorium należało przygotować aplikację w języku C, która powinna:
+\begin{itemize}
+	\item obsługiwać przyciski i diody LED płytki Raspberry Pi za pomocą interfejsu GPIO,
+	\item reagować na zmiany stanu przycisków za pomocą przerwań (bez oczekiwania aktywnego),
+	\item realizować funkcjonalność ustaloną przez studenta.
+\end{itemize}
+Celem ćwiczenia było również przygotowanie pakietu Buildroota ze stworzoną aplikacją i zdalne przetestowanie jej z komputera laboratoryjnego za pomocą debuggera \texttt{gdb}.
+
+\section{Odtwarzanie projektu z załączonego archiwum}
+Dostarczone archiwum należy umieścić w dowolnym miejscu na dysku i rozpakować. Uruchomienie skryptu \texttt{install.sh}, znajdującego się w środku archiwum, spowoduje odtworzenie konfiguracji środowiska z laboratorium. Jako parametr należy podać ścieżkę do katalogu z rozpakowanymi plikami Buildroota.\\[\baselineskip]
+Skrypt utworzy katalog \texttt{felskit-lab2/} równoległy do katalogu przekazanego jako argument. Następnie do obu z nich zostaną przekopiowane odpowiednie pliki i katalogi. Ponadto, skrypt zastosuje domyślną konfigurację dla płytki Raspberry Pi i właściwie spatchuje pliki konfiguracyjne Buildroota. Na koniec skrypt zapyta czy rozpocząć kompilację jądra systemu.
+
+\section{Opis rozwiązania}
+\subsection{Przygotowanie}
+W celu przygotowania środowiska Buildroot, ustawiono następujące opcje:
+\begin{enumerate}
+	\item \textit{System configuration} $\rightarrow$ \textit{Port to run a getty (login prompt) on} na \textit{ttyAMA0}
+	\item \textit{Build options} $\rightarrow$ \textit{Mirrors and Download locations} $\rightarrow$ \textit{Primary download site}\\
+	na \textit{http://192.168.137.24/dl}
+	\item \textit{Target options} $\rightarrow$ \textit{Target ABI} na \textit{EABI}
+	\item \textit{Toolchain} $\rightarrow$ \textit{Toolchain type} na \textit{External toolchain}
+	\item \textit{Toolchain} $\rightarrow$ \textit{Toolchain} na \textit{Sourcery CodeBench ARM 2014.05}
+\end{enumerate}
+Ponadto, zaznaczono opcję
+\begin{quote}
+	\textit{Filesystem images} $\rightarrow$ \textit{initial RAM filesystem linked into linux kernel}
+\end{quote}
+oraz włączono kompresję obrazu ustawiając opcję
+\begin{quote}
+	\textit{Filesystem images} $\rightarrow$ \textit{tar the root filesystem, Compression method (gzip)}
+\end{quote}
+
+\subsection{Zadania}
+\subsubsection{Aplikacja}
+Stworzona w ramach laboratorium aplikacja w języku C jest licznikiem, który wykorzystuje cztery diody LED i trzy przyciski. Diody służą wyświetlaniu binarnej reprezentacji liczby z zakresu $[0,15]$, natomiast przyciski odpowiadają kolejno za dodawanie, odejmowanie i zakończenie obliczeń.\\[\baselineskip]
+Dodatkowa część zadania przewidywała dodanie funkcjonalności polegającej na resetowaniu licznika w przypadku wciśnięcia kombinacji dwóch klawiszy.\\[\baselineskip]
+Obsługa pinów GPIO jest realizowana przy pomocy interfejsu \texttt{sysfs} dostarczonego z systemem Linux. Program jest w stanie zapalać i gasić diody oraz reagować na wciskanie przycisków poprzez wykonywanie operacji na plikach specjalnych.
+\begin{lstlisting}[style=bash, language=c, caption={Funkcja main w pliku counter.c}]
+int main(void) {
+	int num = 0, work = 1, pressed;
+	int btnfds[BTN_COUNT];
+	int ledfds[LED_COUNT];
+	int btnpins[BTN_COUNT] = { BTN_LEFT, BTN_RIGHT, BTN_TOP };
+	int ledpins[LED_COUNT] = { LED_BLUE, LED_WHITE, LED_GREEN, LED_RED };
+
+	export_fds(btnfds, btnpins, "in", BTN_COUNT);
+	export_fds(ledfds, ledpins, "out", LED_COUNT);
+	setup_edges(btnpins, "falling", BTN_COUNT);
+
+	while (work) {
+		light_leds(ledfds, LED_COUNT, num);
+		while ((pressed = poll_btns(btnfds, BTN_COUNT)) < 0);
+		if (pressed == 3) {
+			num = 0;
+			continue;
+		}
+		switch (btnpins[pressed]) {
+			case BTN_LEFT:
+				num = mod(--num, MAX_NUM);
+				break;
+			case BTN_RIGHT:
+				num = mod(++num, MAX_NUM);
+				break;
+			case BTN_TOP:
+				work = 0;
+		}
+	}
+
+	unexport_fds(btnfds, btnpins, BTN_COUNT);
+	unexport_fds(ledfds, ledpins, LED_COUNT);
+	return EXIT_SUCCESS;
+}
+\end{lstlisting}
+Aplikacja rozpoczyna swoje działanie od właściwego skonfigurowania pinów, które odpowiadają obsługiwanym przyciskom i diodom.\\[\baselineskip]
+Funkcja \texttt{export\_fds} wpisuje do pliku \texttt{/sys/class/gpio/export} odpowiednie numery pinów, czego efektem jest utworzenie katalogów \texttt{/sys/class/gpio/gpioNN}, gdzie \texttt{NN} jest numerem pinu. Kolejnym krokiem jest ustalenie kierunku na \texttt{in} dla przycisków i \texttt{out} dla diod poprzez wpisanie tych wartości do plików \texttt{direction} odpowiadających każdemu pinowi. Ostatecznie, otwierane są pliki \texttt{value}, a ich deskryptory zapamiętane w tablicach \texttt{btnfds} oraz \texttt{ledfds}.\\[\baselineskip]
+Funkcja \texttt{setup\_edges} otwiera pliki \texttt{edge} odpowiadające przyciskom i wpisuje \texttt{falling} do każdego z nich. Dzięki temu aplikacja będzie otrzymywać przerwanie w momencie wciśnięcia przycisku.\\[\baselineskip]
+Główna pętla aplikacji zaczyna się od wywołania funkcji \texttt{light\_leds}, która wpisując 0 lub 1 do plików \texttt{value} odpowiednio gasi i zapala diody LED w zależności od obecnej wartości zmiennej \texttt{num}. Następnie, w pętli wywoływana jest funkcja \texttt{poll\_btns}, której zadaniem jest zidentyfikowanie wciśniętego przycisku i zwrócenie jego indeksu, dopóki zwracany przez nią indeks jest mniejszy od zera. Będzie on bowiem wynosił -1, jeżeli zawiedzie debouncing lub zostaną wciśnięte dwa przyciski jednocześnie, z wyjątkiem przycisków odpowiadających dodawaniu i odejmowaniu, co będzie skutkować zresetowaniem licznika. Funkcja \texttt{poll\_btns} wykrywa ich jednoczesne wciśnięcie i zwraca specjalną wartość, która jest sprawdzana przed instrukcją \texttt{switch} w funkcji \texttt{main}.\\[\baselineskip]
+Rozpoznawanie wciśniętego przycisku jest realizowane przy pomocy funkcji \texttt{poll}, która reaguje na przerwania generowane przez przyciski. Wykorzystano dwa wywołania tej funkcji - pierwsze z parametrem \texttt{timeout} wynoszącym -1, a drugie z wynoszącym 50. Pierwsze wywołanie będzie czekać na wciśnięcie przycisku, a drugie zakończy oczekiwanie po pięćdziesięciu milisekundach. Jeżeli drugie wywołanie nie zaobserwuje zmiany w stanach przycisków, nastąpi sprawdzenie wartości w plikach \texttt{value} odpowiadających przyciskom, aby zidentyfikować wszystkie wciśnięte. Taka implementacja ma na celu wyleminowanie drgania (\textit{ang. bouncing}) przycisku, które polega na kilkukrotnej zmianie stanu przycisku krótko po jego pierwszym wciśnięciu lub odciśnięciu.\\[\baselineskip]
+Przed każdym wywołaniem funkcji \texttt{poll} następuje przeczytanie wartości we wszystkich plikach \texttt{value} odpowiadających przyciskom, po wcześniejszym przesunięciu się na ich początek przy pomocy funkcji \texttt{lseek}. Jest to konieczne, ponieważ wywołania te mogłyby się skończyć natychmiast z powodu wcześniej występujących przerwań.\\[\baselineskip]
+Po zidentyfikowaniu wciśniętego przycisku wykonywana jest odpowiednia akcja - dodawanie, odejmowanie lub wyjście z głównej pętli. Ta ostatnia spowoduje, że wywołane zostaną funkcje \texttt{unexport\_fds}, które wpiszą do pliku \texttt{/sys/class/gpio/unexport} numery pinów wyeksportowanych na początku działania programu.
+
+\subsubsection{Pakiet Buildroota}
+Aby stworzyć pakiet Buildroota zawierający wyżej opisaną aplikację, do katalogu \texttt{package/} dodano \texttt{gpio-counter/}, w którym utworzono dwa pliki: \texttt{Config.in} oraz \texttt{gpio-counter.mk}.\\[\baselineskip]
+Pierwszy z nich ma za zadanie zdefiniowanie pakietu.
+\begin{lstlisting}[style=bash, caption={Zawartość pliku Config.in}]
+^config^ BR2_PACKAGE_GPIO_COUNTER
+	^bool^ "gpio-counter"
+	^help^
+	  Binary counter using GPIO.
+
+	  https://github.com/felskit
+\end{lstlisting}
+Drugi plik odpowiada za definicję metody instalacji źródeł, do których podano w nim ścieżkę.
+\begin{lstlisting}[style=bash, caption={Zawartość pliku gpio-counter.mk}, keywordstyle=\color{black}]
+################################################################################
+#
+# gpio-counter
+#
+################################################################################
+
+GPIO_COUNTER_VERSION = 1.0
+GPIO_COUNTER_SITE = ^$(TOPDIR)^/../felskit-lab2/gpio-counter
+GPIO_COUNTER_SITE_METHOD = local
+GPIO_COUNTER_LICENSE = MIT
+
+^define^ GPIO_COUNTER_BUILD_CMDS
+   ^$(MAKE)^ ^$(TARGET_CONFIGURE_OPTS)^ all -C ^$(@D)^
+^endef^
+
+^define^ GPIO_COUNTER_INSTALL_TARGET_CMDS
+    ^$(INSTALL)^ -D -m 0755 ^$(@D)^/counter ^$(TARGET_DIR)^/usr/bin
+^endef^
+
+$(eval $(generic-package))
+\end{lstlisting}
+Tutaj plikiem źródłowym jest \texttt{counter.c}, który zgodnie z instrukcją zawartą w powyższym pliku zostanie skompilowany do pliku \texttt{counter} przy pomocy dostarczonego Makefile'a.
+\begin{lstlisting}[style=bash, caption={Zawartość pliku Makefile}]
+CC=^$(CROSS_COMPILE)^gcc
+CFLAGS=-Wall
+all:
+	^$(CC)^ ^$(CFLAGS)^ counter.c -o counter
+.PHONY: clean
+clean:
+	-rm counter
+\end{lstlisting}
+W pliku \texttt{package/Config.in} w sekcji \textit{Debugging, profiling and benchmark} należy dodać linię
+\begin{lstlisting}[style=bash]
+source "package/gpio-counter/Config.in"
+\end{lstlisting}
+Wówczas możliwe będzie dodanie naszej paczki poprzez zaznaczenie opcji
+\begin{quote}
+	\textit{Target packages} $\rightarrow$ \textit{Debugging, profiling and benchmark} $\rightarrow$ \textit{gpio-counter}
+\end{quote}
+
+\subsubsection{Korzystanie z debuggera}
+Komputer laboratoryjny do zdalnego debugowania potrzebuje działającej na płytce instacji serwera \texttt{gdb}. Wobec tego należy zaznaczyć opcję
+\begin{quote}
+	\textit{Target packages} $\rightarrow$ \textit{Debugging, profiling and benchmark} $\rightarrow$ \textit{gdb}
+\end{quote}
+Opcja \textit{gdbserver} będzie domyślnie zaznaczona. Aby komputer mógł się połączyć z działającą instancją serwera i zdalnie debugować zbudowaną aplikację, konieczne jest wybranie opcji
+\begin{quote}
+	\textit{Toolchain} $\rightarrow$ \textit{Build cross gdb for the host}
+\end{quote}
+Aby aplikacje stworzone w trakcie kompilacji obrazu systemu mogły być debugowane, konieczne jest włączenie dodawania symboli, co można zrobić zaznaczając opcję
+\begin{quote}
+	\textit{Build options} $\rightarrow$ \textit{build packages with debugging symbols}
+\end{quote}
+Pierwszym krokiem do zdalnego debugowania naszej aplikacji jest uruchomienie instacji serwera \texttt{gdb} na płytce przy pomocy polecenia
+\begin{lstlisting}[style=bash]
+$ gdbserver host:56000 /usr/bin/counter
+\end{lstlisting}
+Następnie, na stacji roboczej można zestawić połączenie z płytką poleceniami
+\begin{lstlisting}[style=bash]
+$ /malina/felskit/buildroot-2016.11.2/output/host/usr/bin/arm-linux-gdb \ 
+  /malina/felskit/buildroot-2016.11.2/output/build/gpio-counter-1.0/counter
+$ (gdb) target remote 192.168.143.188:56000
+\end{lstlisting}
+Powyższe operacje pozwolą nam na zdalne debugowanie kodu na płytce z komputera laboratoryjnego. Możliwe jest między innymi ustawianie breakpointów przy pomocy polecenia \texttt{break <line>}, kontynuowanie działania programu do kolejnego breakpointu w kodzie poleceniem \texttt{continue} oraz wyświetlanie wartości zmiennej za pomocą polecenia \texttt{display <name>}.
+\end{document}
